@@ -2,6 +2,7 @@ import User from "../models/user.model.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import cookieParser from "cookie-parser";
 
 dotenv.config();
 
@@ -52,6 +53,15 @@ export const login = async (req, res) => {
         }
 
         return res.status(200).json({ token });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+export const logout = async (req, res) => {
+    try {
+        res.clearCookie("token");
+        return res.status(200).json({ message: "Logout successful" });
     } catch (error) {
         return res.status(500).json({ message: error.message });
     }
