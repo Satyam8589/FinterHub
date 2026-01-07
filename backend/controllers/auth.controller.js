@@ -66,3 +66,24 @@ export const logout = async (req, res) => {
         return res.status(500).json({ message: error.message });
     }
 };
+
+export const refreshToken = async (req, res) => {
+    try {
+        const { refreshToken } = req.cookies;
+        if (!refreshToken) {
+            return res.status(400).json({ message: "Refresh token not found" });
+        }
+        const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.id);
+        if (!user) {
+            return res.status(400).json({ message: "User not found" });
+        }
+        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
+        if (!token) {
+            return res.status(400).json({ message: "Token not generated" });
+        }
+        return res.status(200).json({ token });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
