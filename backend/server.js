@@ -4,22 +4,22 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import connectDB from "./config/db.js";
 import authRouter from "./routes/auth.route.js";
+import groupRouter from "./routes/group.route.js";
 
 dotenv.config();
 
 const app = express();
 
-// Middleware
 app.use(express.json());
-app.use(cookieParser()); // CRITICAL: Required for refresh tokens
+app.use(cookieParser());
 
-// CORS - Allow all origins for development (change when you have frontend)
 app.use(cors({
-    origin: process.env.FRONTEND_URL || '*', // '*' allows all origins
-    credentials: true // Allow cookies
+    origin: process.env.FRONTEND_URL || '*',
+    credentials: true
 }));
 
 app.use("/api/auth", authRouter);
+app.use("/api/group", groupRouter);
 
 const start = async () => {
     try {
