@@ -7,6 +7,9 @@ import User from "../models/user.model.js";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
 
+// Set test environment for faster bcrypt (1 round instead of 10)
+process.env.NODE_ENV = 'test';
+
 dotenv.config();
 
 // Create Express app for testing
@@ -191,7 +194,7 @@ describe("Login Controller Tests", () => {
         expect(response.body.message).toBe("All fields are required");
     });
 
-    it("should return 400 if user does not exist", async () => {
+    it("should return 401 if user does not exist", async () => {
         const loginData = {
             email: "nonexistent@test.com",
             password: "password123"
@@ -200,12 +203,12 @@ describe("Login Controller Tests", () => {
         const response = await request(app)
             .post("/api/auth/login")
             .send(loginData)
-            .expect(400);
+            .expect(401);
 
-        expect(response.body.message).toBe("User not found");
+        expect(response.body.message).toBe("Invalid credentials");
     });
 
-    it("should return 400 if password is incorrect", async () => {
+    it("should return 401 if password is incorrect", async () => {
         // Create a user first
         const userData = await createTestUser();
 
@@ -218,9 +221,9 @@ describe("Login Controller Tests", () => {
         const response = await request(app)
             .post("/api/auth/login")
             .send(loginData)
-            .expect(400);
+            .expect(401);
 
-        expect(response.body.message).toBe("Invalid password");
+        expect(response.body.message).toBe("Invalid credentials");
     });
 
     it("should verify password is hashed and compared correctly", async () => {
@@ -287,10 +290,10 @@ describe("Login Controller Tests", () => {
         const response = await request(app)
             .post("/api/auth/login")
             .send(loginData)
-            .expect(400);
+            .expect(401);
 
         // Should fail because email is case-sensitive
-        expect(response.body.message).toBe("User not found");
+        expect(response.body.message).toBe("Invalid credentials");
     });
 
     it("should not allow login with empty string credentials", async () => {
