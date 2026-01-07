@@ -2,9 +2,10 @@ import request from "supertest";
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
-import { signup, login, logout } from "../controllers/auth.controller.js";
+import { signup, login, logout, refreshToken } from "../controllers/auth.controller.js";
 import User from "../models/user.model.js";
 import cookieParser from "cookie-parser";
+import jwt from "jsonwebtoken";
 
 dotenv.config();
 
@@ -15,6 +16,7 @@ app.use(cookieParser());
 app.post("/api/auth/signup", signup);
 app.post("/api/auth/login", login);
 app.post("/api/auth/logout", logout);
+app.post("/api/auth/refresh-token", refreshToken);
 
 // Connect to your actual MongoDB database
 beforeAll(async () => {
@@ -396,5 +398,272 @@ describe("Logout Controller Tests", () => {
 
         expect(response.body).toHaveProperty('message');
         expect(response.body.message).toBe("Logout successful");
+    });
+});
+
+describe("Refresh Token Controller Tests", () => {
+    
+    // Helper function to create a test user and get tokens
+    const createUserAndGetTokens = async () => {
+        const userData = {
+            name: "Refresh Token User",
+            email: `refreshuser${Date.now()}@test.com`,
+            password: "password123"
+        };
+
+        await request(app)
+            .post("/api/auth/signup")
+            .send(userData);
+
+        const loginResponse = await request(app)
+            .post("/api/auth/login")
+            .send({ email: userData.email, password: userData.password });
+
+        const accessToken = loginResponse.body.token;
+        
+        // Create a refresh token (long-lived)
+        const user = await User.findOne({ email: userData.email });
+        const refreshToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+
+        return { user, accessToken, refreshToken };
+    };
+
+    it("should refresh token successfully with valid refresh token", async () => {
+        const { refreshToken } = await createUserAndGetTokens();
+
+        const response = await request(app)
+            .post("/api/auth/refresh-token")
+            .set('Cookie', [`refreshToken=${refreshToken}`])
+            .expect(200);
+
+        expect(response.body).toHaveProperty("token");
+        expect(typeof response.body.token).toBe("string");
+        expect(response.body.token.length).toBeGreaterThan(0);
+    });
+
+    it("should return 400 if refresh token is missing", async () => {
+        const response = await request(app)
+            .post("/api/auth/refresh-token")
+            .expect(400);
+
+        expect(response.body.message).toBe("Refresh token not found");
+    });
+
+    it("should return 400 if refresh token is missing from cookies", async () => {
+        // Send request without any cookies
+        const response = await request(app)
+            .post("/api/auth/refresh-token")
+            .send({})
+            .expect(400);
+
+        expect(response.body.message).toBe("Refresh token not found");
+    });
+
+    it("should return 500 if refresh token is invalid", async () => {
+        const invalidToken = "invalid.token.here";
+
+        const response = await request(app)
+            .post("/api/auth/refresh-token")
+            .set('Cookie', [`refreshToken=${invalidToken}`])
+            .expect(500);
+
+        expect(response.body).toHaveProperty("message");
+    });
+
+    it("should return 500 if refresh token is malformed", async () => {
+        const malformedToken = "malformed-token-without-proper-structure";
+
+        const response = await request(app)
+            .post("/api/auth/refresh-token")
+            .set('Cookie', [`refreshToken=${malformedToken}`])
+            .expect(500);
+
+        expect(response.body).toHaveProperty("message");
+    });
+
+    it("should return 500 if refresh token is expired", async () => {
+        const { user } = await createUserAndGetTokens();
+
+        // Create an expired token (expired 1 second ago)
+        const expiredToken = jwt.sign(
+            { id: user._id }, 
+            process.env.JWT_SECRET, 
+            { expiresIn: "-1s" }
+        );
+
+        const response = await request(app)
+            .post("/api/auth/refresh-token")
+            .set('Cookie', [`refreshToken=${expiredToken}`])
+            .expect(500);
+
+        expect(response.body).toHaveProperty("message");
+    });
+
+    it("should return 400 if user does not exist", async () => {
+        // Create a token with non-existent user ID
+        const fakeUserId = new mongoose.Types.ObjectId();
+        const fakeToken = jwt.sign({ id: fakeUserId }, process.env.JWT_SECRET, { expiresIn: "7d" });
+
+        const response = await request(app)
+            .post("/api/auth/refresh-token")
+            .set('Cookie', [`refreshToken=${fakeToken}`])
+            .expect(400);
+
+        expect(response.body.message).toBe("User not found");
+    });
+
+    it("should generate a new access token different from refresh token", async () => {
+        const { refreshToken } = await createUserAndGetTokens();
+
+        const response = await request(app)
+            .post("/api/auth/refresh-token")
+            .set('Cookie', [`refreshToken=${refreshToken}`])
+            .expect(200);
+
+        const newAccessToken = response.body.token;
+
+        // New access token should be different from refresh token
+        expect(newAccessToken).not.toBe(refreshToken);
+    });
+
+    it("should verify new access token has correct user ID", async () => {
+        const { user, refreshToken } = await createUserAndGetTokens();
+
+        const response = await request(app)
+            .post("/api/auth/refresh-token")
+            .set('Cookie', [`refreshToken=${refreshToken}`])
+            .expect(200);
+
+        const newAccessToken = response.body.token;
+
+        // Decode and verify the new token
+        const decoded = jwt.verify(newAccessToken, process.env.JWT_SECRET);
+        expect(decoded.id).toBe(user._id.toString());
+    });
+
+    it("should verify new access token has 1 hour expiration", async () => {
+        const { refreshToken } = await createUserAndGetTokens();
+
+        const response = await request(app)
+            .post("/api/auth/refresh-token")
+            .set('Cookie', [`refreshToken=${refreshToken}`])
+            .expect(200);
+
+        const newAccessToken = response.body.token;
+        const decoded = jwt.verify(newAccessToken, process.env.JWT_SECRET);
+
+        // Check expiration is approximately 1 hour
+        const expiresIn = decoded.exp - decoded.iat;
+        expect(expiresIn).toBe(3600); // 1 hour in seconds
+    });
+
+    it("should allow multiple token refreshes with same refresh token", async () => {
+        const { refreshToken } = await createUserAndGetTokens();
+
+        // First refresh
+        const response1 = await request(app)
+            .post("/api/auth/refresh-token")
+            .set('Cookie', [`refreshToken=${refreshToken}`])
+            .expect(200);
+
+        expect(response1.body).toHaveProperty("token");
+
+        // Wait a moment
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Second refresh with same refresh token
+        const response2 = await request(app)
+            .post("/api/auth/refresh-token")
+            .set('Cookie', [`refreshToken=${refreshToken}`])
+            .expect(200);
+
+        expect(response2.body).toHaveProperty("token");
+
+        // Both should succeed but generate different access tokens
+        expect(response1.body.token).not.toBe(response2.body.token);
+    });
+
+    it("should handle refresh token with wrong secret gracefully", async () => {
+        const { user } = await createUserAndGetTokens();
+
+        // Create token with wrong secret
+        const wrongSecretToken = jwt.sign({ id: user._id }, "wrong-secret-key", { expiresIn: "7d" });
+
+        const response = await request(app)
+            .post("/api/auth/refresh-token")
+            .set('Cookie', [`refreshToken=${wrongSecretToken}`])
+            .expect(500);
+
+        expect(response.body).toHaveProperty("message");
+    });
+
+    it("should return proper JSON response format", async () => {
+        const { refreshToken } = await createUserAndGetTokens();
+
+        const response = await request(app)
+            .post("/api/auth/refresh-token")
+            .set('Cookie', [`refreshToken=${refreshToken}`])
+            .expect(200)
+            .expect('Content-Type', /json/);
+
+        expect(response.body).toHaveProperty("token");
+        expect(typeof response.body.token).toBe("string");
+    });
+
+    it("should not accept empty refresh token cookie", async () => {
+        const response = await request(app)
+            .post("/api/auth/refresh-token")
+            .set('Cookie', ['refreshToken='])
+            .expect(400);
+
+        expect(response.body.message).toBe("Refresh token not found");
+    });
+
+    it("should handle refresh token with tampered payload", async () => {
+        const { refreshToken } = await createUserAndGetTokens();
+
+        // Tamper with the token by modifying it
+        const tamperedToken = refreshToken.slice(0, -5) + "XXXXX";
+
+        const response = await request(app)
+            .post("/api/auth/refresh-token")
+            .set('Cookie', [`refreshToken=${tamperedToken}`])
+            .expect(500);
+
+        expect(response.body).toHaveProperty("message");
+    });
+
+    it("should verify refresh token works after user data changes", async () => {
+        const { user, refreshToken } = await createUserAndGetTokens();
+
+        // Update user's name (simulate user data change)
+        await User.findByIdAndUpdate(user._id, { name: "Updated Name" });
+
+        // Refresh token should still work
+        const response = await request(app)
+            .post("/api/auth/refresh-token")
+            .set('Cookie', [`refreshToken=${refreshToken}`])
+            .expect(200);
+
+        expect(response.body).toHaveProperty("token");
+    });
+
+    it("should handle concurrent refresh token requests", async () => {
+        const { refreshToken } = await createUserAndGetTokens();
+
+        // Send multiple concurrent requests
+        const promises = [
+            request(app).post("/api/auth/refresh-token").set('Cookie', [`refreshToken=${refreshToken}`]),
+            request(app).post("/api/auth/refresh-token").set('Cookie', [`refreshToken=${refreshToken}`]),
+            request(app).post("/api/auth/refresh-token").set('Cookie', [`refreshToken=${refreshToken}`])
+        ];
+
+        const responses = await Promise.all(promises);
+
+        // All should succeed
+        responses.forEach(response => {
+            expect(response.status).toBe(200);
+            expect(response.body).toHaveProperty("token");
+        });
     });
 });
