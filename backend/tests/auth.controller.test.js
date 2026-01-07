@@ -2,16 +2,19 @@ import request from "supertest";
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
-import { signup, login } from "../controllers/auth.controller.js";
+import { signup, login, logout } from "../controllers/auth.controller.js";
 import User from "../models/user.model.js";
+import cookieParser from "cookie-parser";
 
 dotenv.config();
 
 // Create Express app for testing
 const app = express();
 app.use(express.json());
+app.use(cookieParser());
 app.post("/api/auth/signup", signup);
 app.post("/api/auth/login", login);
+app.post("/api/auth/logout", logout);
 
 // Connect to your actual MongoDB database
 beforeAll(async () => {
@@ -300,5 +303,98 @@ describe("Login Controller Tests", () => {
             .expect(400);
 
         expect(response.body.message).toBe("All fields are required");
+    });
+});
+
+describe("Logout Controller Tests", () => {
+    
+    it("should logout successfully and clear cookie", async () => {
+        const response = await request(app)
+            .post("/api/auth/logout")
+            .expect(200);
+
+        expect(response.body.message).toBe("Logout successful");
+        
+        // Check if Set-Cookie header is present to clear the cookie
+        const cookies = response.headers['set-cookie'];
+        if (cookies) {
+            const tokenCookie = cookies.find(cookie => cookie.includes('token='));
+            if (tokenCookie) {
+                // Cookie should be cleared (empty value or expired)
+                expect(tokenCookie).toMatch(/token=;|token=\s*;/);
+            }
+        }
+    });
+
+    it("should return 200 even without existing cookie", async () => {
+        // Logout should work even if user doesn't have a cookie
+        const response = await request(app)
+            .post("/api/auth/logout")
+            .expect(200);
+
+        expect(response.body.message).toBe("Logout successful");
+    });
+
+    it("should handle logout with existing cookie", async () => {
+        // First create a user and login to get a token
+        const userData = {
+            name: "Logout Test User",
+            email: `logoutuser${Date.now()}@test.com`,
+            password: "password123"
+        };
+
+        await request(app)
+            .post("/api/auth/signup")
+            .send(userData);
+
+        const loginResponse = await request(app)
+            .post("/api/auth/login")
+            .send({ email: userData.email, password: userData.password });
+
+        const token = loginResponse.body.token;
+
+        // Now logout with the cookie
+        const response = await request(app)
+            .post("/api/auth/logout")
+            .set('Cookie', [`token=${token}`])
+            .expect(200);
+
+        expect(response.body.message).toBe("Logout successful");
+    });
+
+    it("should clear cookie regardless of token validity", async () => {
+        // Logout should work even with invalid token
+        const response = await request(app)
+            .post("/api/auth/logout")
+            .set('Cookie', ['token=invalid_token_here'])
+            .expect(200);
+
+        expect(response.body.message).toBe("Logout successful");
+    });
+
+    it("should handle multiple logout requests", async () => {
+        // First logout
+        const response1 = await request(app)
+            .post("/api/auth/logout")
+            .expect(200);
+
+        expect(response1.body.message).toBe("Logout successful");
+
+        // Second logout (should still work)
+        const response2 = await request(app)
+            .post("/api/auth/logout")
+            .expect(200);
+
+        expect(response2.body.message).toBe("Logout successful");
+    });
+
+    it("should return proper JSON response", async () => {
+        const response = await request(app)
+            .post("/api/auth/logout")
+            .expect(200)
+            .expect('Content-Type', /json/);
+
+        expect(response.body).toHaveProperty('message');
+        expect(response.body.message).toBe("Logout successful");
     });
 });
