@@ -1,5 +1,8 @@
 import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 export const createGroup = async (req, res) => {
     try {
@@ -90,6 +93,40 @@ export const inviteUserToGroup = async (req, res) => {
                 name: updatedGroup.name,
                 members: updatedGroup.members
             }
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+export const getGroupMembers = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const requestingUserId = req.user._id;
+        
+        const group = await Group.findById(groupId).select('members').lean();
+        
+        if (!group) {
+            return res.status(404).json({ message: "Group not found" });
+        }
+
+        const isMember = group.members.some(memberId => memberId.toString() === requestingUserId.toString());
+        if (!isMember) {
+            return res.status(403).json({ message: "You are not authorized to view this group" });
+        }
+        
+        const members = await User.find({ _id: { $in: group.members } })
+            .select('_id name email')
+            .lean();
+        
+        if (members.length === 0) {
+            return res.status(404).json({ message: "No members found in this group" });
+        }
+        
+        return res.status(200).json({ 
+            message: "Group members retrieved successfully",
+            count: members.length,
+            members: members
         });
     } catch (error) {
         return res.status(500).json({ message: error.message });
