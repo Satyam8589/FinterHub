@@ -132,3 +132,82 @@ export const getGroupMembers = async (req, res) => {
         return res.status(500).json({ message: error.message });
     }
 };
+
+export const removeUserFromGroup = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const { userId } = req.body;
+        const requestingUserId = req.user._id;
+        
+        if (!userId) {
+            return res.status(400).json({ message: "User ID is required" });
+        }
+        
+        const [group, user] = await Promise.all([
+            Group.findById(groupId).select('createdBy members').lean(),
+            User.findById(userId).select('_id').lean()
+        ]);
+        
+        if (!group) {
+            return res.status(404).json({ message: "Group not found" });
+        }
+        
+        if (group.createdBy.toString() !== requestingUserId.toString()) {
+            return res.status(403).json({ message: "Only group creator can remove users" });
+        }
+        
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+        
+        const isUserMember = group.members.some(memberId => memberId.toString() === userId);
+        if (!isUserMember) {
+            return res.status(400).json({ message: "User is not a member of this group" });
+        }
+        
+        const updatedGroup = await Group.findByIdAndUpdate(
+            groupId,
+            { $pull: { members: userId } },
+            { new: true, select: '_id name members' }
+        ).lean();
+        
+        return res.status(200).json({ 
+            message: "User removed from group successfully",
+            group: {
+                id: updatedGroup._id,
+                name: updatedGroup.name,
+                members: updatedGroup.members
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+export const listAllGroupsUserPresents = async (req, res) => {
+    try {
+        const requestingUserId = req.user._id;
+        
+        const groups = await Group.find({ members: requestingUserId })
+            .select('_id name description createdBy members createdAt')
+            .lean();
+        
+        const groupsWithMemberCount = groups.map(group => ({
+            id: group._id,
+            name: group.name,
+            description: group.description,
+            createdBy: group.createdBy,
+            memberCount: group.members.length,
+            isCreator: group.createdBy.toString() === requestingUserId.toString(),
+            createdAt: group.createdAt
+        }));
+        
+        return res.status(200).json({ 
+            message: "Groups retrieved successfully",
+            count: groupsWithMemberCount.length,
+            groups: groupsWithMemberCount
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};

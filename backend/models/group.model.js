@@ -24,10 +24,8 @@ const groupSchema = new mongoose.Schema({
     }]
 }, { timestamps: true });
 
-// Indexes for performance optimization
-groupSchema.index({ createdBy: 1 });  // Fast authorization checks
-groupSchema.index({ members: 1 });     // Fast member lookups
-// Note: name index already created by unique: true
+groupSchema.index({ createdBy: 1 });
+groupSchema.index({ members: 1 });
 
 const Group = mongoose.model("Group", groupSchema);
 
