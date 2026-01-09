@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - MONGO_URL=${MONGO_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - PORT=5000
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+    networks:
+      - finterhub-network
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+    volumes:
+      - mongodb-data:/data/db
+    restart: unless-stopped
+    networks:
+      - finterhub-network
+
+volumes:
+  mongodb-data:
+
+networks:
+  finterhub-network:
+    driver: bridge

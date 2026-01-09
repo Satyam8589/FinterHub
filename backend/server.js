@@ -23,6 +23,16 @@ app.use("/api/auth", authRouter);
 app.use("/api/group", groupRouter);
 app.use("/api/expense", expenseRouter);
 
+app.get("/health", (req, res) => {
+    res.status(200).json({ 
+        status: "healthy", 
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        environment: process.env.NODE_ENV || "development"
+    });
+});
+
+
 const start = async () => {
     try {
         await connectDB();
