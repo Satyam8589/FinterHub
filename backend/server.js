@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import connectDB from "./config/db.js";
 import authRouter from "./routes/auth.route.js";
 import groupRouter from "./routes/group.route.js";
+import expenseRouter from "./routes/expense.route.js";
 
 dotenv.config();
 
@@ -20,6 +21,7 @@ app.use(cors({
 
 app.use("/api/auth", authRouter);
 app.use("/api/group", groupRouter);
+app.use("/api/expense", expenseRouter);
 
 const start = async () => {
     try {
