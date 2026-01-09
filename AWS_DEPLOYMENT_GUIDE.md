@@ -13,7 +13,7 @@
 # Navigate to backend directory
 cd backend
 
-# Build Docker image
+# Build Docker imagedoc
 docker build -t finterhub-backend:latest .
 
 # Test the image locally

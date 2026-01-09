@@ -115,3 +115,32 @@ export const addExpenseInAnyCurrency = async (req, res) => {
     }
 };
 
+export const deleteExpense = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const { id } = req.params;
+        
+        if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+            return res.status(400).json({ message: "Invalid expense ID" });
+        }
+        
+        const expense = await Expense.findById(id).select('paidBy').lean();
+        
+        if (!expense) {
+            return res.status(404).json({ message: "Expense not found" });
+        }
+        
+        if (expense.paidBy.toString() !== userId.toString()) {
+            return res.status(403).json({ message: "You are not authorized to delete this expense" });
+        }
+        
+        await Expense.findByIdAndDelete(id);
+        
+        return res.status(200).json({ 
+            message: "Expense deleted successfully",
+            deletedExpenseId: id
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
