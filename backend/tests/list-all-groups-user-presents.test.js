@@ -583,12 +583,17 @@ describe("List All Groups User Presents Controller Tests", () => {
         });
 
         it("should efficiently query large number of groups", async () => {
-            const { token: userToken } = await createUserAndGetToken(39);
+            const { user, token: userToken } = await createUserAndGetToken(39);
 
-            // Create 50 groups
-            for (let i = 0; i < 50; i++) {
-                await createTestGroup(userToken, `Large Test ${i}`);
-            }
+            // Create 50 groups directly in DB for efficiency (setup)
+            const groupsData = Array.from({ length: 50 }, (_, i) => ({
+                name: `large test ${Date.now()}_${i}`,
+                description: "Test group for performance testing",
+                createdBy: user._id,
+                members: [user._id]
+            }));
+            
+            await Group.insertMany(groupsData);
 
             const startTime = Date.now();
             const response = await request(app)
@@ -598,8 +603,8 @@ describe("List All Groups User Presents Controller Tests", () => {
             const endTime = Date.now();
 
             expect(response.body.count).toBe(50);
-            expect(endTime - startTime).toBeLessThan(5000); // Should complete in under 5 seconds
-        });
+            expect(endTime - startTime).toBeLessThan(5000); // The API call itself should still be under 5s
+        }, 60000); // 60s timeout for setup + test
     });
 
     describe("Data Isolation", () => {
