@@ -2,10 +2,11 @@ import request from "supertest";
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
-import { signup, login, logout, refreshToken } from "../controllers/auth.controller.js";
+import { signup, login, logout, refreshToken, getUserProfile } from "../controllers/auth.controller.js";
 import User from "../models/user.model.js";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
+import { auth } from "../middleware/auth.js";
 
 // Set test environment for faster bcrypt (1 round instead of 10)
 process.env.NODE_ENV = 'test';
@@ -20,6 +21,7 @@ app.post("/api/auth/signup", signup);
 app.post("/api/auth/login", login);
 app.post("/api/auth/logout", logout);
 app.post("/api/auth/refresh-token", refreshToken);
+app.get("/api/auth/profile", auth, getUserProfile);
 
 // Connect to your actual MongoDB database
 beforeAll(async () => {
@@ -668,5 +670,300 @@ describe("Refresh Token Controller Tests", () => {
             expect(response.status).toBe(200);
             expect(response.body).toHaveProperty("token");
         });
+    });
+});
+
+describe("Get User Profile Controller Tests", () => {
+    
+    // Helper function to create a test user and get access token
+    const createUserAndGetToken = async () => {
+        const userData = {
+            name: "Profile Test User",
+            email: `profileuser${Date.now()}@test.com`,
+            password: "password123"
+        };
+
+        await request(app)
+            .post("/api/auth/signup")
+            .send(userData);
+
+        const loginResponse = await request(app)
+            .post("/api/auth/login")
+            .send({ email: userData.email, password: userData.password });
+
+        const accessToken = loginResponse.body.token;
+        const user = await User.findOne({ email: userData.email });
+
+        return { user, accessToken, userData };
+    };
+
+    it("should get user profile successfully with valid token", async () => {
+        const { accessToken, userData } = await createUserAndGetToken();
+
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", `Bearer ${accessToken}`)
+            .expect(200);
+
+        expect(response.body).toHaveProperty("user");
+        expect(response.body.user).toHaveProperty("id");
+        expect(response.body.user).toHaveProperty("name");
+        expect(response.body.user).toHaveProperty("email");
+        expect(response.body.user.name).toBe(userData.name);
+        expect(response.body.user.email).toBe(userData.email);
+    });
+
+    it("should return 401 if no authorization token is provided", async () => {
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .expect(401);
+
+        expect(response.body.message).toContain("Unauthorized");
+    });
+
+    it("should return 401 if authorization header is missing", async () => {
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .expect(401);
+
+        expect(response.body.message).toBe("Unauthorized - No token provided");
+    });
+
+    it("should return 401 if token is invalid", async () => {
+        const invalidToken = "invalid.token.here";
+
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", `Bearer ${invalidToken}`)
+            .expect(401);
+
+        expect(response.body.message).toContain("Unauthorized");
+    });
+
+    it("should return 401 if token is malformed", async () => {
+        const malformedToken = "malformed-token-without-proper-structure";
+
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", `Bearer ${malformedToken}`)
+            .expect(401);
+
+        expect(response.body.message).toContain("Unauthorized");
+    });
+
+    it("should return 401 if token is expired", async () => {
+        const { user } = await createUserAndGetToken();
+
+        // Create an expired token (expired 1 second ago)
+        const expiredToken = jwt.sign(
+            { id: user._id }, 
+            process.env.JWT_SECRET, 
+            { expiresIn: "-1s" }
+        );
+
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", `Bearer ${expiredToken}`)
+            .expect(401);
+
+        expect(response.body.message).toContain("Unauthorized");
+    });
+
+    it("should NOT include password in response", async () => {
+        const { accessToken } = await createUserAndGetToken();
+
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", `Bearer ${accessToken}`)
+            .expect(200);
+
+        expect(response.body.user).not.toHaveProperty("password");
+        
+        // Verify password is not in any form
+        const responseString = JSON.stringify(response.body);
+        expect(responseString).not.toContain("password");
+        expect(responseString).not.toContain("$2b$"); // bcrypt hash prefix
+    });
+
+    it("should return 404 if user no longer exists", async () => {
+        const { user, accessToken } = await createUserAndGetToken();
+
+        // Delete the user from database
+        await User.findByIdAndDelete(user._id);
+
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", `Bearer ${accessToken}`)
+            .expect(404);
+
+        expect(response.body.message).toBe("User not found");
+    });
+
+    it("should accept token without 'Bearer' prefix", async () => {
+        const { accessToken, userData } = await createUserAndGetToken();
+
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", accessToken)
+            .expect(200);
+
+        expect(response.body.user.email).toBe(userData.email);
+    });
+
+    it("should return correct user data for different users", async () => {
+        // Create first user
+        const user1 = await createUserAndGetToken();
+        
+        // Wait a moment to ensure different timestamp
+        await new Promise(resolve => setTimeout(resolve, 10));
+        
+        // Create second user
+        const user2 = await createUserAndGetToken();
+
+        // Get profile for user 1
+        const response1 = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", `Bearer ${user1.accessToken}`)
+            .expect(200);
+
+        // Get profile for user 2
+        const response2 = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", `Bearer ${user2.accessToken}`)
+            .expect(200);
+
+        // Verify different users get their own data
+        expect(response1.body.user.email).toBe(user1.userData.email);
+        expect(response2.body.user.email).toBe(user2.userData.email);
+        expect(response1.body.user.email).not.toBe(response2.body.user.email);
+    });
+
+    it("should return proper JSON response format", async () => {
+        const { accessToken } = await createUserAndGetToken();
+
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", `Bearer ${accessToken}`)
+            .expect(200)
+            .expect('Content-Type', /json/);
+
+        expect(response.body).toHaveProperty("user");
+        expect(typeof response.body.user).toBe("object");
+    });
+
+    it("should handle token with wrong secret gracefully", async () => {
+        const { user } = await createUserAndGetToken();
+
+        // Create token with wrong secret
+        const wrongSecretToken = jwt.sign({ id: user._id }, "wrong-secret-key", { expiresIn: "1h" });
+
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", `Bearer ${wrongSecretToken}`)
+            .expect(401);
+
+        expect(response.body.message).toContain("Unauthorized");
+    });
+
+    it("should handle token with tampered payload", async () => {
+        const { accessToken } = await createUserAndGetToken();
+
+        // Tamper with the token by modifying it
+        const tamperedToken = accessToken.slice(0, -5) + "XXXXX";
+
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", `Bearer ${tamperedToken}`)
+            .expect(401);
+
+        expect(response.body.message).toContain("Unauthorized");
+    });
+
+    it("should verify user ID in response matches token", async () => {
+        const { user, accessToken } = await createUserAndGetToken();
+
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", `Bearer ${accessToken}`)
+            .expect(200);
+
+        expect(response.body.user.id).toBe(user._id.toString());
+    });
+
+    it("should work after user data is updated", async () => {
+        const { user, accessToken } = await createUserAndGetToken();
+
+        // Update user's name
+        const newName = "Updated Profile Name";
+        await User.findByIdAndUpdate(user._id, { name: newName });
+
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", `Bearer ${accessToken}`)
+            .expect(200);
+
+        // Should return updated name
+        expect(response.body.user.name).toBe(newName);
+    });
+
+    it("should handle multiple concurrent profile requests", async () => {
+        const { accessToken } = await createUserAndGetToken();
+
+        // Send multiple concurrent requests
+        const promises = [
+            request(app).get("/api/auth/profile").set("Authorization", `Bearer ${accessToken}`),
+            request(app).get("/api/auth/profile").set("Authorization", `Bearer ${accessToken}`),
+            request(app).get("/api/auth/profile").set("Authorization", `Bearer ${accessToken}`)
+        ];
+
+        const responses = await Promise.all(promises);
+
+        // All should succeed with same data
+        responses.forEach(response => {
+            expect(response.status).toBe(200);
+            expect(response.body).toHaveProperty("user");
+        });
+
+        // All responses should have same user data
+        expect(responses[0].body.user.id).toBe(responses[1].body.user.id);
+        expect(responses[1].body.user.id).toBe(responses[2].body.user.id);
+    });
+
+    it("should return 401 with empty authorization header", async () => {
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", "")
+            .expect(401);
+
+        expect(response.body.message).toContain("Unauthorized");
+    });
+
+    it("should return 401 with Bearer but no token", async () => {
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", "Bearer ")
+            .expect(401);
+
+        expect(response.body.message).toContain("Unauthorized");
+    });
+
+    it("should only return safe user fields", async () => {
+        const { accessToken } = await createUserAndGetToken();
+
+        const response = await request(app)
+            .get("/api/auth/profile")
+            .set("Authorization", `Bearer ${accessToken}`)
+            .expect(200);
+
+        const userKeys = Object.keys(response.body.user);
+        
+        // Should only have these safe fields
+        expect(userKeys).toContain("id");
+        expect(userKeys).toContain("name");
+        expect(userKeys).toContain("email");
+        
+        // Should NOT have sensitive fields
+        expect(userKeys).not.toContain("password");
+        expect(userKeys).not.toContain("__v");
     });
 });

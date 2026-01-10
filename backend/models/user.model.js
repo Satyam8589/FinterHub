@@ -13,6 +13,11 @@ const userSchema = new mongoose.Schema({
     password: {
         type: String,
         required: true
+    },
+    preferredCurrency: {
+        type: String,
+        enum: ["USD", "INR", "EUR", "CAD", "GBP"],
+        default: "USD"
     }
 });
 

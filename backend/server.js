@@ -6,6 +6,8 @@ import connectDB from "./config/db.js";
 import authRouter from "./routes/auth.route.js";
 import groupRouter from "./routes/group.route.js";
 import expenseRouter from "./routes/expense.route.js";
+import currencyRouter from "./routes/currency.routes.js";
+import settlementRouter from "./routes/settlement.route.js";
 
 dotenv.config();
 
@@ -22,6 +24,8 @@ app.use(cors({
 app.use("/api/auth", authRouter);
 app.use("/api/group", groupRouter);
 app.use("/api/expense", expenseRouter);
+app.use("/api/currency", currencyRouter);
+app.use("/api/settlement", settlementRouter);
 
 app.get("/health", (req, res) => {
     res.status(200).json({ 
