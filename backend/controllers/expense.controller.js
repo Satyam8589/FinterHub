@@ -341,3 +341,83 @@ export const getUserExpenses = async (req, res) => {
         return res.status(500).json({ message: error.message });
     }
 };
+
+export const calculateGroupBalance = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const { groupId } = req.params;
+        
+        if (!groupId || !groupId.match(/^[0-9a-fA-F]{24}$/)) {
+            return res.status(400).json({ message: "Invalid group ID" });
+        }
+        
+        const [group, expenses] = await Promise.all([
+            Group.findById(groupId).populate('members', '_id name email').lean(),
+            Expense.find({ group: groupId }).populate('paidBy', '_id name email').lean()
+        ]);
+        
+        if (!group) {
+            return res.status(404).json({ message: "Group not found" });
+        }
+        
+        const isMember = group.members.some(member => member._id.toString() === userId.toString());
+        if (!isMember) {
+            return res.status(403).json({ message: "You are not a member of this group" });
+        }
+        
+        const groupData = {
+            id: group._id,
+            name: group.name,
+            description: group.description,
+            members: group.members.map(member => ({
+                id: member._id,
+                name: member.name,
+                email: member.email
+            }))
+        };
+        
+        const balanceMap = new Map();
+        
+        group.members.forEach(member => {
+            balanceMap.set(member._id.toString(), {
+                userId: member._id.toString(),
+                name: member.name,
+                email: member.email,
+                totalPaid: 0,
+                totalOwed: 0,
+                balance: 0
+            });
+        });
+        
+        expenses.forEach(expense => {
+            const payerId = expense.paidBy._id.toString();
+            if (balanceMap.has(payerId)) {
+                const memberBalance = balanceMap.get(payerId);
+                memberBalance.totalPaid += expense.amount;
+            }
+        });
+        
+        const totalAmount = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+        const perPersonShare = group.members.length > 0 ? totalAmount / group.members.length : 0;
+        
+        balanceMap.forEach((memberBalance, userId) => {
+            memberBalance.totalOwed = perPersonShare;
+            memberBalance.balance = memberBalance.totalPaid - memberBalance.totalOwed;
+        });
+        
+        const balances = Array.from(balanceMap.values());
+        
+        return res.status(200).json({
+            message: "Group balance calculated successfully",
+            group: groupData,
+            summary: {
+                totalExpenses: expenses.length,
+                totalAmount: totalAmount,
+                perPersonShare: perPersonShare
+            },
+            balances: balances
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
