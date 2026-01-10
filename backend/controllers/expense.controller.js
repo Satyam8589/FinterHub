@@ -144,3 +144,79 @@ export const deleteExpense = async (req, res) => {
         return res.status(500).json({ message: error.message });
     }
 };
+
+export const getExpenseById = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const { id } = req.params;
+        
+        if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+            return res.status(400).json({ message: "Invalid expense ID" });
+        }
+        
+        const expense = await Expense.findById(id)
+            .populate('paidBy', '_id name email')
+            .populate('group', '_id name description members')
+            .lean();
+        
+        if (!expense) {
+            return res.status(404).json({ message: "Expense not found" });
+        }
+        
+        let isAuthorized = false;
+        
+        if (expense.paidBy._id.toString() === userId.toString()) {
+            isAuthorized = true;
+        }
+        
+        if (expense.group && expense.group.members) {
+            const isMember = expense.group.members.some(
+                memberId => memberId.toString() === userId.toString()
+            );
+            if (isMember) {
+                isAuthorized = true;
+            }
+        }
+        
+        if (!isAuthorized) {
+            return res.status(403).json({ 
+                message: "You are not authorized to view this expense" 
+            });
+        }
+        
+        return res.status(200).json({
+            message: "Expense retrieved successfully",
+            expense: {
+                id: expense._id,
+                title: expense.title,
+                description: expense.description,
+                amount: expense.amount,
+                currency: expense.currency,
+                category: expense.category,
+                date: expense.date,
+                paidBy: {
+                    id: expense.paidBy._id,
+                    name: expense.paidBy.name,
+                    email: expense.paidBy.email
+                },
+                group: expense.group ? {
+                    id: expense.group._id,
+                    name: expense.group.name,
+                    description: expense.group.description
+                } : null,
+                splitType: expense.splitType,
+                splitDetails: expense.splitDetails,
+                paymentMethod: expense.paymentMethod,
+                tags: expense.tags,
+                isRecurring: expense.isRecurring,
+                recurringFrequency: expense.recurringFrequency,
+                notes: expense.notes,
+                attachments: expense.attachments,
+                createdAt: expense.createdAt,
+                updatedAt: expense.updatedAt
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
