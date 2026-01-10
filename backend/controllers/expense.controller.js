@@ -285,3 +285,59 @@ export const getGroupExpenses = async (req, res) => {
         return res.status(500).json({ message: error.message });
     }
 };
+
+export const getUserExpenses = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        
+        const [user, expenses] = await Promise.all([
+            User.findById(userId).select('_id name email').lean(),
+            Expense.find({ paidBy: userId })
+                .populate('group', '_id name description members')
+                .select('-__v')
+                .lean()
+        ]);
+        
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+        
+        const userData = {
+            id: user._id,
+            name: user.name,
+            email: user.email
+        };
+        
+        return res.status(200).json({
+            message: "Expenses retrieved successfully",
+            count: expenses.length,
+            expenses: expenses.map(expense => ({
+                id: expense._id,
+                title: expense.title,
+                description: expense.description,
+                amount: expense.amount,
+                currency: expense.currency,
+                category: expense.category,
+                date: expense.date,
+                paidBy: userData,
+                group: expense.group ? {
+                    id: expense.group._id,
+                    name: expense.group.name,
+                    description: expense.group.description
+                } : null,
+                splitType: expense.splitType,
+                splitDetails: expense.splitDetails,
+                paymentMethod: expense.paymentMethod,
+                tags: expense.tags,
+                isRecurring: expense.isRecurring,
+                recurringFrequency: expense.recurringFrequency,
+                notes: expense.notes,
+                attachments: expense.attachments,
+                createdAt: expense.createdAt,
+                updatedAt: expense.updatedAt
+            }))
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
