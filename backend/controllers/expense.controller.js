@@ -220,3 +220,68 @@ export const getExpenseById = async (req, res) => {
         return res.status(500).json({ message: error.message });
     }
 };
+
+export const getGroupExpenses = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const { groupId } = req.params;
+        
+        if (!groupId || !groupId.match(/^[0-9a-fA-F]{24}$/)) {
+            return res.status(400).json({ message: "Invalid group ID" });
+        }
+        
+        const [group, expenses] = await Promise.all([
+            Group.findById(groupId).select('_id name description members').lean(),
+            Expense.find({ group: groupId })
+                .populate('paidBy', '_id name email')
+                .select('-__v')
+                .lean()
+        ]);
+        
+        if (!group) {
+            return res.status(404).json({ message: "Group not found" });
+        }
+        
+        const isMember = group.members.some(memberId => memberId.toString() === userId.toString());
+        if (!isMember) {
+            return res.status(403).json({ message: "You are not a member of this group" });
+        }
+        
+        const groupData = {
+            id: group._id,
+            name: group.name,
+            description: group.description
+        };
+        
+        return res.status(200).json({
+            message: "Expenses retrieved successfully",
+            expenses: expenses.map(expense => ({
+                id: expense._id,
+                title: expense.title,
+                description: expense.description,
+                amount: expense.amount,
+                currency: expense.currency,
+                category: expense.category,
+                date: expense.date,
+                paidBy: {
+                    id: expense.paidBy._id,
+                    name: expense.paidBy.name,
+                    email: expense.paidBy.email
+                },
+                group: groupData,
+                splitType: expense.splitType,
+                splitDetails: expense.splitDetails,
+                paymentMethod: expense.paymentMethod,
+                tags: expense.tags,
+                isRecurring: expense.isRecurring,
+                recurringFrequency: expense.recurringFrequency,
+                notes: expense.notes,
+                attachments: expense.attachments,
+                createdAt: expense.createdAt,
+                updatedAt: expense.updatedAt
+            }))
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
