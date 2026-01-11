@@ -211,3 +211,32 @@ export const listAllGroupsUserPresents = async (req, res) => {
         return res.status(500).json({ message: error.message });
     }
 };
+
+export const deleteGroup = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const requestingUserId = req.user._id;
+        
+        const group = await Group.findById(groupId).select('createdBy members').lean();
+        
+        if (!group) {
+            return res.status(404).json({ message: "Group not found" });
+        }
+        
+        if (group.createdBy.toString() !== requestingUserId.toString()) {
+            return res.status(403).json({ message: "Only group creator can delete groups" });
+        }
+
+        if (group.members.length > 1) {
+            return res.status(400).json({ message: "Group cannot be deleted as it has members" });
+        }
+        
+        await Group.findByIdAndDelete(groupId);
+        
+        return res.status(200).json({ 
+            message: "Group deleted successfully"
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};

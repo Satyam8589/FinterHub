@@ -118,32 +118,45 @@ export const generateSettlementPlan = async (req, res) => {
             const fromUser = userMap[settlement.from];
             const toUser = userMap[settlement.to];
 
+            // Safety check - skip if users not found
+            if (!fromUser || !toUser) {
+                return null;
+            }
+
             const amountInFromCurrency = convertCurrency(
                 settlement.amountUSD, 
                 'USD', 
-                fromUser.preferredCurrency
+                fromUser.preferredCurrency || 'USD'
             );
             const amountInToCurrency = convertCurrency(
                 settlement.amountUSD, 
                 'USD', 
-                toUser.preferredCurrency
+                toUser.preferredCurrency || 'USD'
             );
 
             return {
                 from: {
-                    user: fromUser,
+                    user: {
+                        id: fromUser.id,
+                        name: fromUser.name,
+                        email: fromUser.email
+                    },
                     amount: amountInFromCurrency,
-                    currency: fromUser.preferredCurrency
+                    currency: fromUser.preferredCurrency || 'USD'
                 },
                 to: {
-                    user: toUser,
+                    user: {
+                        id: toUser.id,
+                        name: toUser.name,
+                        email: toUser.email
+                    },
                     amount: amountInToCurrency,
-                    currency: toUser.preferredCurrency
+                    currency: toUser.preferredCurrency || 'USD'
                 },
                 amountUSD: settlement.amountUSD,
                 description: `${fromUser.name} pays ${toUser.name}`
             };
-        });
+        }).filter(Boolean); // Remove null entries
 
         const balanceSummary = {};
         

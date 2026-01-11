@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createGroup, inviteUserToGroup, getGroupMembers, removeUserFromGroup, listAllGroupsUserPresents } from "../controllers/group.controller.js";
+import { createGroup, inviteUserToGroup, getGroupMembers, removeUserFromGroup, listAllGroupsUserPresents, deleteGroup } from "../controllers/group.controller.js";
 import { auth } from "../middleware/auth.js";
 
 const router = Router();
@@ -13,5 +13,7 @@ router.route("/get-group-members/:groupId").get(auth, getGroupMembers);
 router.route("/remove-user-from-group/:groupId").post(auth, removeUserFromGroup);
 
 router.route("/list-all-groups-user-presents").get(auth, listAllGroupsUserPresents);
+
+router.route("/delete-group/:groupId").post(auth, deleteGroup);
 
 export default router;
