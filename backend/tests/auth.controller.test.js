@@ -7,6 +7,8 @@ import User from "../models/user.model.js";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
 import { auth } from "../middleware/auth.js";
+import { connect, closeDatabase, clearDatabase } from "./setup/db.js";
+
 
 // Set test environment for faster bcrypt (1 round instead of 10)
 process.env.NODE_ENV = 'test';
@@ -23,19 +25,21 @@ app.post("/api/auth/logout", logout);
 app.post("/api/auth/refresh-token", refreshToken);
 app.get("/api/auth/profile", auth, getUserProfile);
 
-// Connect to your actual MongoDB database
+// Connect to in-memory database
 beforeAll(async () => {
-    if (mongoose.connection.readyState === 0) {
-        await mongoose.connect(process.env.MONGO_URL);
-    }
+    await connect();
 });
 
-// Clean up test users after tests
+// Clean up database after tests
 afterAll(async () => {
-    // Delete test users created during testing
-    await User.deleteMany({ email: { $regex: /@test\.com$/ } });
-    await mongoose.connection.close();
+    await closeDatabase();
 });
+
+// Clear data between tests (optional but recommended for true isolation)
+afterEach(async () => {
+    await clearDatabase();
+});
+
 
 describe("Signup Controller Tests", () => {
     

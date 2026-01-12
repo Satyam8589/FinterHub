@@ -7,6 +7,8 @@ import { deleteGroup } from '../controllers/group.controller.js';
 import { auth } from '../middleware/auth.js';
 import User from '../models/user.model.js';
 import Group from '../models/group.model.js';
+import { connect, closeDatabase, clearDatabase } from './setup/db.js';
+
 
 // Set test environment for faster bcrypt
 process.env.NODE_ENV = 'test';
@@ -18,19 +20,20 @@ const app = express();
 app.use(express.json());
 app.delete("/api/groups/:groupId", auth, deleteGroup);
 
-// Connect to MongoDB database
+// Connect to in-memory database
 beforeAll(async () => {
-    if (mongoose.connection.readyState === 0) {
-        await mongoose.connect(process.env.MONGO_URL);
-    }
+    await connect();
 });
 
-// Clean up test users after tests
+// Clean up database after all tests
 afterAll(async () => {
-    await User.deleteMany({ email: { $regex: /@test\.com$/ } });
-    await Group.deleteMany({ name: { $regex: /delete.*test/i } });
-    await mongoose.connection.close();
+    await closeDatabase();
 });
+
+// Note: We don't clearDatabase afterEach here because the inner describe 
+// block depends on users created in a separate beforeAll.
+// Alternatively, we could move user creation into a beforeAll that runs after connect.
+
 
 describe('DELETE /api/groups/:groupId - Delete Group', () => {
     let creatorToken, memberToken, nonMemberToken;

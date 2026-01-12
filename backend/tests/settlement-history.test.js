@@ -7,6 +7,8 @@ import User from "../models/user.model.js";
 import Group from "../models/group.model.js";
 import Settlement from "../models/settlement.model.js";
 import settlementRouter from "../routes/settlement.route.js";
+import { connect, closeDatabase, clearDatabase } from "./setup/db.js";
+
 
 dotenv.config();
 process.env.NODE_ENV = 'test';
@@ -16,20 +18,21 @@ const app = express();
 app.use(express.json());
 app.use("/api/settlement", settlementRouter);
 
-// Connect to MongoDB
+// Connect to in-memory database
 beforeAll(async () => {
-    if (mongoose.connection.readyState === 0) {
-        await mongoose.connect(process.env.MONGO_URL);
-    }
+    await connect();
 });
 
-// Clean up after tests
+// Clean up database after all tests
 afterAll(async () => {
-    await User.deleteMany({ email: { $regex: /@settlementhistorytest\.com$/ } });
-    await Group.deleteMany({ name: { $regex: /^Test Settlement History/ } });
-    await Settlement.deleteMany({});
-    await mongoose.connection.close();
+    await closeDatabase();
 });
+
+// Clear database after each test for clean slate
+afterEach(async () => {
+    await clearDatabase();
+});
+
 
 describe("Settlement History & Verification Tests", () => {
     let user1, user2, user3, outsider;
@@ -103,11 +106,7 @@ describe("Settlement History & Verification Tests", () => {
         });
     });
 
-    afterEach(async () => {
-        await User.deleteMany({ _id: { $in: [user1._id, user2._id, user3._id, outsider._id] } });
-        await Group.deleteMany({ _id: group._id });
-        await Settlement.deleteMany({ group: group._id });
-    });
+
 
     // ============================================
     // GET SETTLEMENT HISTORY TESTS

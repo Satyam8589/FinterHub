@@ -7,6 +7,8 @@ import { removeUserFromGroup, createGroup, inviteUserToGroup } from "../controll
 import { auth } from "../middleware/auth.js";
 import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
+import { connect, closeDatabase, clearDatabase } from "./setup/db.js";
+
 
 process.env.NODE_ENV = 'test';
 
@@ -18,17 +20,21 @@ app.post("/api/group/create-group", auth, createGroup);
 app.post("/api/group/invite-user-to-group/:groupId", auth, inviteUserToGroup);
 app.post("/api/group/remove-user-from-group/:groupId", auth, removeUserFromGroup);
 
+// Connect to in-memory database
 beforeAll(async () => {
-    if (mongoose.connection.readyState === 0) {
-        await mongoose.connect(process.env.MONGO_URL);
-    }
+    await connect();
 });
 
+// Clean up database after all tests
 afterAll(async () => {
-    await Group.deleteMany({});
-    await User.deleteMany({ email: { $regex: /@test\.com$/ } });
-    await mongoose.connection.close();
+    await closeDatabase();
 });
+
+// Clear database after each test for clean slate
+afterEach(async () => {
+    await clearDatabase();
+});
+
 
 describe("Remove User From Group Controller Tests", () => {
     
@@ -71,9 +77,7 @@ describe("Remove User From Group Controller Tests", () => {
             .send({ userId: userId.toString() });
     };
 
-    afterEach(async () => {
-        await Group.deleteMany({});
-    });
+
 
     describe("Success Cases", () => {
         

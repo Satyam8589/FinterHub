@@ -7,6 +7,8 @@ import User from "../models/user.model.js";
 import Group from "../models/group.model.js";
 import Settlement from "../models/settlement.model.js";
 import settlementRouter from "../routes/settlement.route.js";
+import { connect, closeDatabase, clearDatabase } from "./setup/db.js";
+
 
 dotenv.config();
 process.env.NODE_ENV = 'test';
@@ -16,20 +18,21 @@ const app = express();
 app.use(express.json());
 app.use("/api/settlement", settlementRouter);
 
-// Connect to MongoDB
+// Connect to in-memory database
 beforeAll(async () => {
-    if (mongoose.connection.readyState === 0) {
-        await mongoose.connect(process.env.MONGO_URL);
-    }
+    await connect();
 });
 
-// Clean up after tests
+// Clean up database after all tests
 afterAll(async () => {
-    await User.deleteMany({ email: { $regex: /@recordsettlementtest\.com$/ } });
-    await Group.deleteMany({ name: { $regex: /^Test Record Settlement/ } });
-    await Settlement.deleteMany({});
-    await mongoose.connection.close();
+    await closeDatabase();
 });
+
+// Clear database after each test for clean slate
+afterEach(async () => {
+    await clearDatabase();
+});
+
 
 describe("Record Settlement Tests", () => {
     let payer, receiver, otherMember, outsider;
@@ -37,8 +40,8 @@ describe("Record Settlement Tests", () => {
     let group;
     let pendingSettlement, verifiedSettlement, completedSettlement;
 
-    // Create test data once for all tests
-    beforeAll(async () => {
+    // Create test data before each test for fresh state
+    beforeEach(async () => {
         // Create test users
         payer = await User.create({
             name: "Bob (Payer)",
@@ -119,24 +122,8 @@ describe("Record Settlement Tests", () => {
         });
     });
 
-    // Reset verifiedSettlement status before each test that modifies it
-    beforeEach(async () => {
-        // Reset verifiedSettlement to verified status if it was changed
-        await Settlement.updateOne(
-            { _id: verifiedSettlement._id },
-            { 
-                status: "verified",
-                completedAt: null
-            }
-        );
-    });
 
-    // Clean up after all tests
-    afterAll(async () => {
-        await User.deleteMany({ _id: { $in: [payer._id, receiver._id, otherMember._id, outsider._id] } });
-        await Group.deleteMany({ _id: group._id });
-        await Settlement.deleteMany({ group: group._id });
-    });
+
 
     describe("PATCH /api/settlement/:groupId/complete/:settlementId", () => {
         

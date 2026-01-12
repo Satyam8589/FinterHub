@@ -7,6 +7,8 @@ import { createGroup } from "../controllers/group.controller.js";
 import { auth } from "../middleware/auth.js";
 import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
+import { connect, closeDatabase, clearDatabase } from "./setup/db.js";
+
 
 // Set test environment for faster bcrypt
 process.env.NODE_ENV = 'test';
@@ -18,24 +20,21 @@ const app = express();
 app.use(express.json());
 app.post("/api/group/create-group", auth, createGroup);
 
-// Connect to your actual MongoDB database
+// Connect to in-memory database
 beforeAll(async () => {
-    if (mongoose.connection.readyState === 0) {
-        await mongoose.connect(process.env.MONGO_URL);
-    }
+    await connect();
 });
 
-// Clean up ALL test data after all tests complete
+// Clean up database after all tests
 afterAll(async () => {
-    // Delete ALL groups (since this is a test suite, we can safely delete all)
-    // In production, you'd want more specific filtering
-    await Group.deleteMany({});
-    
-    // Delete all test users
-    await User.deleteMany({ email: { $regex: /@test\.com$/ } });
-    
-    await mongoose.connection.close();
+    await closeDatabase();
 });
+
+// Clear database after each test for clean slate
+afterEach(async () => {
+    await clearDatabase();
+});
+
 
 describe("Create Group Controller Tests", () => {
     
@@ -61,12 +60,7 @@ describe("Create Group Controller Tests", () => {
         return { user, token };
     };
 
-    // Clean up created groups after each test
-    afterEach(async () => {
-        // Delete ALL groups after each test to prevent duplicates
-        // This ensures a clean state for the next test
-        await Group.deleteMany({});
-    });
+
 
     describe("Success Cases", () => {
         
@@ -281,7 +275,7 @@ describe("Create Group Controller Tests", () => {
 
             // Verify in database
             const group = await Group.findOne({ name: groupData.name.toLowerCase() });
-            expect(group.user.toString()).toBe(user._id.toString());
+            expect(group.createdBy.toString()).toBe(user._id.toString());
         });
     });
 

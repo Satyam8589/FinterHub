@@ -8,6 +8,8 @@ import Group from "../models/group.model.js";
 import Expense from "../models/expense.model.js";
 import settlementRouter from "../routes/settlement.route.js";
 import { auth } from "../middleware/auth.js";
+import { connect, closeDatabase, clearDatabase } from "./setup/db.js";
+
 
 dotenv.config();
 process.env.NODE_ENV = 'test';
@@ -17,20 +19,21 @@ const app = express();
 app.use(express.json());
 app.use("/api/settlement", settlementRouter);
 
-// Connect to MongoDB
+// Connect to in-memory database
 beforeAll(async () => {
-    if (mongoose.connection.readyState === 0) {
-        await mongoose.connect(process.env.MONGO_URL);
-    }
+    await connect();
 });
 
-// Clean up after tests
+// Clean up database after all tests
 afterAll(async () => {
-    await User.deleteMany({ email: { $regex: /@settlementtest\.com$/ } });
-    await Group.deleteMany({ name: { $regex: /^Test Settlement/ } });
-    await Expense.deleteMany({});
-    await mongoose.connection.close();
+    await closeDatabase();
 });
+
+// Clear database after each test for clean slate
+afterEach(async () => {
+    await clearDatabase();
+});
+
 
 describe("Settlement Controller Tests", () => {
     let user1, user2, user3;
@@ -74,11 +77,7 @@ describe("Settlement Controller Tests", () => {
         });
     });
 
-    afterEach(async () => {
-        await User.deleteMany({ _id: { $in: [user1._id, user2._id, user3._id] } });
-        await Group.deleteMany({ _id: group._id });
-        await Expense.deleteMany({ group: group._id });
-    });
+
 
     describe("GET /api/settlement/:groupId/plan", () => {
         

@@ -9,6 +9,8 @@ import { auth } from "../middleware/auth.js";
 import Group from "../models/group.model.js";
 import User from "../models/user.model.js";
 import Expense from "../models/expense.model.js";
+import { connect, closeDatabase, clearDatabase } from "./setup/db.js";
+
 
 process.env.NODE_ENV = 'test';
 
@@ -19,18 +21,21 @@ app.use(express.json());
 app.post("/api/group/create-group", auth, createGroup);
 app.post("/api/expense/add-expense-in-any-currency", auth, addExpenseInAnyCurrency);
 
+// Connect to in-memory database
 beforeAll(async () => {
-    if (mongoose.connection.readyState === 0) {
-        await mongoose.connect(process.env.MONGO_URL);
-    }
+    await connect();
 });
 
+// Clean up database after all tests
 afterAll(async () => {
-    await Group.deleteMany({});
-    await User.deleteMany({ email: { $regex: /@test\.com$/ } });
-    await Expense.deleteMany({});
-    await mongoose.connection.close();
+    await closeDatabase();
 });
+
+// Clear database after each test for clean slate
+afterEach(async () => {
+    await clearDatabase();
+});
+
 
 describe("Add Expense In Any Currency Controller Tests", () => {
     
@@ -66,10 +71,7 @@ describe("Add Expense In Any Currency Controller Tests", () => {
         return response.body.group;
     };
 
-    afterEach(async () => {
-        await Group.deleteMany({});
-        await Expense.deleteMany({});
-    });
+
 
     describe("Success Cases", () => {
         
